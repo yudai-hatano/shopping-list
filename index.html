@@ -467,7 +467,7 @@ function addToInvFromShop(shopItem) {
     writeInv(key, { level: newLevel, ...(autoExp && { expiry: autoExp }) });
     toast(`「${shopItem.name}」の在庫レベルを上げました`);
   } else {
-    pushInv({ name: shopItem.name, cat: shopItem.cat, level: 3, expiry: autoExp, frozen: false, originalExpiry: null, at: Date.now() });
+    pushInv({ name: shopItem.name, cat: shopItem.cat, level: 4, expiry: autoExp, frozen: false, originalExpiry: null, at: Date.now() });
     toast(`「${shopItem.name}」を在庫に追加しました${autoExp ? '（賞味期限自動設定）' : ''}`);
   }
 }
