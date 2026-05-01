@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>買い物&在庫管理</title>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    :root {
+      --green: #43A047; --green-dk: #2E7D32; --green-lt: #C8E6C9;
+      --red: #E53935;
+      --orange: #E65100; --orange-lt: #FFF3E0; --orange-border: #FFCC80;
+      --ice: #E1F5FE; --ice-border: #81D4FA; --ice-dk: #0277BD;
+      --bg: #F1F3F4; --card: #FFFFFF;
+      --text: #202124; --text2: #5F6368; --border: #DADCE0;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Yu Gothic UI', sans-serif;
+      background: var(--bg); color: var(--text);
+      min-height: 100dvh; padding-bottom: 64px;
+    }
+
+    /* ===== HEADER ===== */
+    .header {
+      background: linear-gradient(135deg, var(--green-dk), var(--green));
+      color: #fff; padding: 12px 16px;
+      display: flex; align-items: center; justify-content: space-between;
+      position: sticky; top: 0; z-index: 200;
+      box-shadow: 0 2px 6px rgba(0,0,0,.25);
+    }
+    .header h1 { font-size: 17px; font-weight: 700; }
+    .header-right { display: flex; align-items: center; gap: 10px; }
+    .sync-dot { width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,.35); flex-shrink: 0; transition: background .4s; }
+    .sync-dot.on { background: #69F0AE; box-shadow: 0 0 0 3px rgba(105,240,174,.3); }
+    .share-btn {
+      background: rgba(255,255,255,.2); border: none; color: #fff;
+      border-radius: 20px; padding: 5px 12px; font-size: 12px; font-weight: 600;
+      cursor: pointer; display: flex; align-items: center; gap: 5px; transition: background .2s;
+    }
+    .share-btn:hover { background: rgba(255,255,255,.35); }
+
+    /* ===== TABS ===== */
+    .tab-bar {
+      position: fixed; bottom: 0; left: 0; right: 0; background: #fff;
+      border-top: 1px solid var(--border); display: flex; z-index: 200;
+      box-shadow: 0 -2px 8px rgba(0,0,0,.08);
+    }
+    .tab-btn {
+      flex: 1; border: none; background: none; cursor: pointer; padding: 7px 0;
+      display: flex; flex-direction: column; align-items: center; gap: 1px;
+      color: var(--text2); font-size: 10px; font-weight: 600; transition: color .2s; font-family: inherit;
+    }
+    .tab-btn .ti { font-size: 22px; line-height: 1; }
+    .tab-btn.active { color: var(--green); }
+    .tab-pane { display: none; padding: 14px 14px 0; }
+    .tab-pane.active { display: block; }
+
+    /* ===== SHARED CARD / FORM ===== */
+    .card { background: var(--card); border-radius: 14px; padding: 14px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.1); }
+    .row { display: flex; gap: 8px; }
+    .row + .row { margin-top: 8px; }
+    .inp {
+      flex: 1; padding: 11px 13px; border: 1.5px solid var(--border);
+      border-radius: 10px; font-size: 15px; font-family: inherit;
+      background: #fff; color: var(--text); transition: border-color .2s; min-width: 0;
+    }
+    .inp:focus { outline: none; border-color: var(--green); }
+    .inp-date { font-size: 14px; color: var(--text2); }
+    .sel {
+      flex: 1; padding: 11px 10px; border: 1.5px solid var(--border);
+      border-radius: 10px; font-size: 13px; font-family: inherit;
+      background: #fff; color: var(--text); cursor: pointer; transition: border-color .2s; min-width: 0;
+    }
+    .sel:focus { outline: none; border-color: var(--green); }
+    .btn {
+      padding: 11px 18px; border: none; border-radius: 10px;
+      font-size: 15px; font-weight: 700; cursor: pointer; font-family: inherit;
+      transition: filter .15s; flex-shrink: 0;
+    }
+    .btn:active { filter: brightness(.88); }
+    .btn-green { background: var(--green); color: #fff; }
+    .btn-red   { background: var(--red);   color: #fff; padding: 8px 11px; font-size: 14px; border-radius: 8px; }
+    .btn-ghost  { background: transparent;  border: 1.5px solid var(--border); color: var(--text2); padding: 8px 12px; font-size: 13px; border-radius: 8px; }
+    .btn-full   { width: 100%; margin-top: 8px; padding: 12px; }
+
+    /* ===== LOW-STOCK SECTION ===== */
+    .low-card { background: #fff; border: 1.5px solid var(--orange-border); border-radius: 14px; overflow: hidden; margin-bottom: 16px; box-shadow: 0 1px 4px rgba(230,81,0,.1); }
+    .low-header { background: var(--orange-lt); padding: 10px 14px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--orange-border); }
+    .low-header-title { font-size: 13px; font-weight: 800; color: var(--orange); display: flex; align-items: center; gap: 5px; }
+    .low-header-hint  { font-size: 11px; color: #BF360C; margin-top: 2px; }
+    .low-item { display: flex; align-items: center; gap: 11px; padding: 12px 14px; cursor: pointer; border-bottom: 1px solid var(--orange-border); transition: background .15s; user-select: none; }
+    .low-item:last-child { border-bottom: none; }
+    .low-item:active { background: var(--orange-lt); }
+    .low-chk { width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--orange-border); background: var(--orange-lt); flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 13px; color: var(--orange); font-weight: 900; }
+    .low-info { flex: 1; min-width: 0; }
+    .low-name { font-size: 15px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .low-meta { display: flex; align-items: center; gap: 7px; margin-top: 4px; flex-wrap: wrap; }
+    .cat-tag { background: var(--bg); border-radius: 4px; padding: 1px 6px; font-size: 11px; font-weight: 600; }
+    .mini-gauge { display: flex; align-items: center; gap: 3px; }
+    .mdot { width: 9px; height: 9px; border-radius: 50%; background: #E0E0E0; flex-shrink: 0; }
+    .mini-lbl { font-size: 11px; font-weight: 800; margin-left: 3px; }
+
+    /* ===== SHOPPING ITEMS ===== */
+    .li { background: #fff; border: 1.5px solid var(--border); border-radius: 12px; padding: 11px 13px; margin-bottom: 8px; display: flex; align-items: center; gap: 10px; animation: fadeIn .18s ease; }
+    .li.done { background: #F8FBF8; border-color: var(--green-lt); opacity: .72; }
+    @keyframes fadeIn { from { opacity:0; transform:translateY(-6px) } to { opacity:1; transform:none } }
+    .chk { width: 26px; height: 26px; border-radius: 7px; border: 2px solid var(--border); cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 900; color: #fff; transition: all .18s; background: #fff; }
+    .chk.on { background: var(--green); border-color: var(--green); }
+    .li-info { flex: 1; min-width: 0; }
+    .li-name { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .li-name.done { text-decoration: line-through; color: var(--text2); }
+    .li-meta { font-size: 12px; color: var(--text2); margin-top: 3px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+
+    /* ===== INVENTORY CARD ===== */
+    .toolbar { display: flex; gap: 7px; margin-bottom: 12px; align-items: center; }
+    .tool-btn { padding: 6px 13px; border: 1.5px solid var(--border); border-radius: 20px; background: #fff; font-size: 12px; cursor: pointer; white-space: nowrap; transition: all .18s; font-family: inherit; font-weight: 600; color: var(--text2); }
+    .tool-btn.on { background: var(--green-dk); border-color: var(--green-dk); color: #fff; }
+    .cat-filter { display: flex; gap: 7px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 12px; scrollbar-width: none; }
+    .cat-filter::-webkit-scrollbar { display: none; }
+    .cf-btn { padding: 6px 13px; border: 1.5px solid var(--border); border-radius: 20px; background: #fff; font-size: 12px; cursor: pointer; white-space: nowrap; transition: all .18s; font-family: inherit; font-weight: 600; color: var(--text2); }
+    .cf-btn.on { background: var(--green); border-color: var(--green); color: #fff; }
+    .sec-label { font-size: 12px; font-weight: 700; color: var(--text2); text-transform: uppercase; letter-spacing: .5px; display: flex; align-items: center; justify-content: space-between; margin: 14px 0 8px; }
+    .badge { background: var(--green); color: #fff; border-radius: 12px; padding: 2px 8px; font-size: 11px; font-weight: 700; }
+    .badge-orange { background: var(--orange); }
+    .inv-card { background: #fff; border: 1.5px solid var(--border); border-radius: 14px; padding: 13px 14px; margin-bottom: 9px; animation: fadeIn .18s ease; }
+    .inv-card.frozen   { background: var(--ice); border-color: var(--ice-border); }
+    .inv-card.exp-crit { border-color: #EF9A9A; background: #FFF5F5; }
+    .inv-card.exp-near { border-color: #FFCC80; background: #FFFBF5; }
+    .inv-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 7px; }
+    .inv-name { font-size: 16px; font-weight: 700; flex: 1; min-width: 0; word-break: break-all; }
+    .inv-top-btns { display: flex; gap: 6px; flex-shrink: 0; align-items: center; }
+    .frz-btn { width: 34px; height: 34px; border: 1.5px solid var(--border); border-radius: 9px; background: #fff; cursor: pointer; font-size: 17px; display: flex; align-items: center; justify-content: center; transition: all .18s; flex-shrink: 0; }
+    .frz-btn.on { background: var(--ice-border); border-color: var(--ice-dk); }
+    .inv-mid { display: flex; align-items: center; gap: 7px; margin-bottom: 10px; flex-wrap: wrap; }
+    .inv-cat { font-size: 12px; background: var(--bg); border-radius: 5px; padding: 2px 8px; font-weight: 600; }
+    .frozen-badge { font-size: 11px; font-weight: 700; background: #B3E5FC; color: var(--ice-dk); border-radius: 5px; padding: 2px 8px; }
+    .exp-tag { font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 5px; cursor: pointer; display: flex; align-items: center; gap: 3px; transition: filter .15s; user-select: none; }
+    .exp-tag:active { filter: brightness(.88); }
+    .exp-tag.none { background: #F1F3F4; color: #9AA0A6; }
+    .exp-tag.ok   { background: #E8F5E9; color: #2E7D32; }
+    .exp-tag.near { background: #FFF8E1; color: #E65100; }
+    .exp-tag.crit { background: #FFEBEE; color: #C62828; }
+    .inv-bot { display: flex; align-items: center; gap: 8px; }
+    .gauge-wrap { display: flex; align-items: center; gap: 8px; flex: 1; }
+    .gauge-dots { display: flex; gap: 5px; }
+    .gdot { width: 14px; height: 14px; border-radius: 50%; background: #E0E0E0; }
+    .gauge-lbl { font-size: 13px; font-weight: 800; }
+    .lvb { width: 34px; height: 34px; border: none; border-radius: 9px; font-size: 20px; font-weight: 800; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: filter .15s; flex-shrink: 0; }
+    .lvb:active { filter: brightness(.85); }
+    .lvb.m { background: #FFCDD2; color: #C62828; }
+    .lvb.p { background: #C8E6C9; color: #2E7D32; }
+    .alert-banner { border-radius: 12px; padding: 11px 14px; margin-bottom: 12px; font-size: 13px; font-weight: 600; display: none; }
+    .alert-exp { background: #FFEBEE; color: #C62828; border: 1.5px solid #EF9A9A; }
+    .alert-low { background: #FFF3E0; color: #E65100; border: 1.5px solid #FFCC80; }
+
+    /* ===== EMPTY / ALERTS ===== */
+    .empty { text-align: center; padding: 36px 20px; color: var(--text2); }
+    .empty .ei { font-size: 48px; margin-bottom: 10px; }
+    .empty p { font-size: 14px; line-height: 1.7; }
+
+    /* ===== MODAL ===== */
+    .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 500; display: flex; align-items: flex-end; justify-content: center; opacity: 0; pointer-events: none; transition: opacity .22s; }
+    .overlay.show { opacity: 1; pointer-events: all; }
+    .modal { background: #fff; border-radius: 22px 22px 0 0; padding: 22px 20px 28px; width: 100%; max-width: 520px; max-height: 90dvh; overflow-y: auto; transform: translateY(100%); transition: transform .28s cubic-bezier(.32,0,.67,0); }
+    .overlay.show .modal { transform: none; }
+    .modal-title { font-size: 17px; font-weight: 800; margin-bottom: 14px; }
+    .modal p { font-size: 13px; color: var(--text2); line-height: 1.65; margin-bottom: 10px; }
+    .url-box { background: var(--bg); border-radius: 10px; padding: 12px 14px; font-size: 13px; word-break: break-all; border: 1.5px solid var(--border); margin-bottom: 12px; }
+    hr { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
+    .steps { counter-reset: s; }
+    .step { counter-increment: s; padding: 8px 0 8px 34px; position: relative; font-size: 13px; color: var(--text); line-height: 1.6; }
+    .step::before { content: counter(s); position: absolute; left: 0; top: 8px; width: 23px; height: 23px; background: var(--green); color: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800; }
+
+
+    /* ===== TOAST ===== */
+    .toast { position: fixed; top: 68px; left: 50%; transform: translateX(-50%) translateY(-10px); background: rgba(30,30,30,.9); color: #fff; padding: 10px 20px; border-radius: 22px; font-size: 13px; font-weight: 600; z-index: 1000; opacity: 0; transition: all .25s; pointer-events: none; white-space: nowrap; max-width: 90vw; overflow: hidden; text-overflow: ellipsis; }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  </style>
+</head>
+<body>
+
+<header class="header">
+  <h1>🛒 買い物 ＆ 在庫</h1>
+  <div class="header-right">
+    <span class="sync-dot" id="syncDot"></span>
+    <button class="share-btn" onclick="openModal('shareModal')"><span id="roomLabel">------</span> 📋</button>
+  </div>
+</header>
+
+<!-- ========== SHOPPING TAB ========== -->
+<div class="tab-pane active" id="pane-shop">
+  <div class="card">
+    <div class="row">
+      <input class="inp" id="sName" type="text" placeholder="アイテム名" autocomplete="off" />
+    </div>
+    <div class="row" style="margin-top:8px">
+      <select class="sel" id="sCat"></select>
+      <input class="inp" id="sQty" type="number" value="1" min="1" style="flex:0 0 60px;text-align:center" />
+    </div>
+    <button class="btn btn-green btn-full" onclick="addShopItem()">＋ リストに追加</button>
+  </div>
+  <div id="shopList"></div>
+</div>
+
+<!-- ========== INVENTORY TAB ========== -->
+<div class="tab-pane" id="pane-inv">
+  <div class="toolbar">
+    <span style="font-size:12px;color:var(--text2);font-weight:600;flex-shrink:0">並び順：</span>
+    <button class="tool-btn on" id="sort-cat" onclick="setSort('cat',this)">📁 カテゴリー</button>
+    <button class="tool-btn"   id="sort-exp" onclick="setSort('exp',this)">📅 賞味期限</button>
+  </div>
+  <div class="cat-filter" id="catFilter"></div>
+  <div class="alert-banner alert-exp" id="alertExp"></div>
+  <div class="alert-banner alert-low" id="alertLow"></div>
+  <div class="card">
+    <div class="row">
+      <input class="inp" id="iName" type="text" placeholder="アイテム名" autocomplete="off" />
+    </div>
+    <div class="row" style="margin-top:8px">
+      <select class="sel" id="iCat"></select>
+      <select class="sel" id="iLevel" style="flex:0 0 auto">
+        <option value="1">すごく少ない</option>
+        <option value="2">少ない</option>
+        <option value="3" selected>普通</option>
+        <option value="4">ある</option>
+        <option value="5">多い</option>
+      </select>
+    </div>
+    <div style="margin-top:8px">
+      <label style="font-size:11px;color:var(--text2);font-weight:600;display:block;margin-bottom:4px">賞味期限（任意 — 生もの・乾物は自動設定）</label>
+      <input class="inp inp-date" id="iExpiry" type="date" style="width:100%;padding:9px 13px" />
+    </div>
+    <button class="btn btn-green btn-full" onclick="addInvItem()">＋ 在庫に追加</button>
+  </div>
+  <div id="invList"></div>
+</div>
+
+<!-- Tab Bar (3 tabs) -->
+<nav class="tab-bar">
+  <button class="tab-btn active" id="tb-shop" onclick="switchTab('shop')">
+    <span class="ti">🛒</span><span>買い物</span>
+  </button>
+  <button class="tab-btn" id="tb-inv" onclick="switchTab('inv')">
+    <span class="ti">📦</span><span>在庫</span>
+  </button>
+</nav>
+
+<!-- Share Modal -->
+<div class="overlay" id="shareModal" onclick="closeModal('shareModal')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-title">🔗 家族と共有</div>
+    <p>このURLを家族に送るだけでリアルタイム同期できます。</p>
+    <div class="url-box" id="shareUrlBox"></div>
+    <button class="btn btn-green btn-full" onclick="copyUrl()">URLをコピー</button>
+    <hr><button class="btn btn-ghost btn-full" onclick="closeModal('shareModal')">閉じる</button>
+  </div>
+</div>
+
+<!-- Expiry Edit Modal -->
+<div class="overlay" id="expiryModal" onclick="closeModal('expiryModal')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-title">📅 賞味期限を設定</div>
+    <p id="expiryItemLabel" style="font-weight:700;font-size:15px;color:var(--text);margin-bottom:12px"></p>
+    <label style="font-size:13px;font-weight:700;display:block;margin-bottom:6px">賞味期限</label>
+    <input class="inp inp-date" id="expiryDateInput" type="date" style="width:100%;margin-bottom:12px" />
+    <button class="btn btn-green btn-full" onclick="saveExpiry()">設定する</button>
+    <button class="btn btn-ghost btn-full" style="margin-top:8px;background:#FFF3E0;color:#E65100;border-color:#FFCC80" onclick="clearExpiry()">期限を削除</button>
+    <hr><button class="btn btn-ghost btn-full" onclick="closeModal('expiryModal')">キャンセル</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ─────────────────────────────────────────────────────
+// Master data
+// ─────────────────────────────────────────────────────
+const CATS = [
+  { id: '生もの',     icon: '🥩', autoExpiry: 7   },
+  { id: '調味料',    icon: '🧂', autoExpiry: null },
+  { id: '乾物',      icon: '🫘', autoExpiry: 60  },
+  { id: '飲み物',    icon: '🥤', autoExpiry: null },
+  { id: '日用品',    icon: '🧴', autoExpiry: null },
+  { id: '洗剤・掃除', icon: '🧹', autoExpiry: null },
+  { id: 'その他',    icon: '📦', autoExpiry: null },
+];
+const CAT_MAP = Object.fromEntries(CATS.map(c => [c.id, c]));
+
+const LEVELS = [
+  null,
+  { label: 'すごく少ない', color: '#C62828' },
+  { label: '少ない',       color: '#E65100' },
+  { label: '普通',         color: '#F9A825' },
+  { label: 'ある',         color: '#558B2F' },
+  { label: '多い',         color: '#1B5E20' },
+];
+
+const ROOM_KEY = 'room_v1';
+
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyB0L16Q4nlRNWVovmKXSUp1yO096PP-vmQ",
+  authDomain: "shopping-list-9c5a8.firebaseapp.com",
+  databaseURL: "https://shopping-list-9c5a8-default-rtdb.firebaseio.com",
+  projectId: "shopping-list-9c5a8",
+  storageBucket: "shopping-list-9c5a8.firebasestorage.app",
+  messagingSenderId: "477469568777",
+  appId: "1:477469568777:web:257324bf44ee1f8536edd8",
+  measurementId: "G-VV7B0RTJ3J"
+};
+
+let db        = null;
+let roomId    = null;
+let shopData  = {};
+let invData   = {};
+let invFilter = 'all';
+let invSort   = 'cat';
+let editingId = null;
+
+// ─────────────────────────────────────────────────────
+// Boot
+// ─────────────────────────────────────────────────────
+function boot() {
+  buildSelects();
+  initRoom();
+  initFirebase();
+}
+
+function buildSelects() {
+  const opts = CATS.map(c => `<option value="${c.id}">${c.icon} ${c.id}</option>`).join('');
+  ['sCat','iCat'].forEach(id => document.getElementById(id).innerHTML = opts);
+  document.getElementById('catFilter').innerHTML =
+    `<button class="cf-btn on" onclick="setFilter('all',this)">すべて</button>` +
+    CATS.map(c => `<button class="cf-btn" onclick="setFilter('${c.id}',this)">${c.icon} ${c.id}</button>`).join('');
+}
+
+// ─────────────────────────────────────────────────────
+// Room
+// ─────────────────────────────────────────────────────
+function initRoom() {
+  const params  = new URLSearchParams(window.location.hash.slice(1));
+  const fromUrl = params.get('room');
+  roomId = fromUrl || localStorage.getItem(ROOM_KEY) || uid();
+  localStorage.setItem(ROOM_KEY, roomId);
+  window.location.hash = 'room=' + roomId;
+  document.getElementById('roomLabel').textContent = roomId.slice(0,6).toUpperCase();
+}
+function uid() { return Math.random().toString(36).slice(2,9) + Math.random().toString(36).slice(2,5); }
+
+// ─────────────────────────────────────────────────────
+// Firebase
+// ─────────────────────────────────────────────────────
+function initFirebase() {
+  try {
+    if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+    db = firebase.database();
+    firebase.database().ref('.info/connected').on('value', s =>
+      document.getElementById('syncDot').classList.toggle('on', !!s.val())
+    );
+    db.ref(`rooms/${roomId}/shop`).on('value', s => { shopData = s.val()||{}; renderShop(); });
+    db.ref(`rooms/${roomId}/inv`).on('value',  s => { invData  = s.val()||{}; renderInv(); renderShop(); });
+  } catch(e) {
+    console.error('Firebase初期化エラー:', e);
+    useOffline();
+  }
+}
+
+function useOffline() {
+  try { shopData = JSON.parse(localStorage.getItem('shop_'+roomId)||'{}'); } catch { shopData={}; }
+  try { invData  = JSON.parse(localStorage.getItem('inv_'+roomId)||'{}');  } catch { invData={}; }
+  renderShop(); renderInv();
+}
+
+function persist() {
+  localStorage.setItem('shop_'+roomId, JSON.stringify(shopData));
+  localStorage.setItem('inv_'+roomId,  JSON.stringify(invData));
+}
+
+// ─────────────────────────────────────────────────────
+// Date helpers
+// ─────────────────────────────────────────────────────
+function addDaysToDate(days, from) {
+  const d = from ? new Date(from) : new Date();
+  d.setDate(d.getDate() + days);
+  return d.toISOString().split('T')[0];
+}
+
+function calcAutoExpiry(cat) {
+  const info = CAT_MAP[cat];
+  return (info && info.autoExpiry) ? addDaysToDate(info.autoExpiry) : null;
+}
+
+function expiryInfo(dateStr) {
+  if (!dateStr) return null;
+  const today = new Date(); today.setHours(0,0,0,0);
+  const exp   = new Date(dateStr);
+  const diff  = Math.round((exp - today) / 86400000);
+  const m = exp.getMonth()+1, d = exp.getDate();
+  const ds = `${m}/${d}`;
+  let text, cls;
+  if (diff < 0)        { text = `${ds} 期限切れ`;      cls = 'crit'; }
+  else if (diff === 0) { text = `${ds} 今日まで`;      cls = 'crit'; }
+  else if (diff <= 3)  { text = `${ds} あと${diff}日`; cls = 'crit'; }
+  else if (diff <= 7)  { text = `${ds} あと${diff}日`; cls = 'near'; }
+  else                 { text = `${ds} あと${diff}日`; cls = 'ok';   }
+  return { text, cls, diff };
+}
+
+// ─────────────────────────────────────────────────────
+// Shopping list — CRUD
+// ─────────────────────────────────────────────────────
+function addShopItem() {
+  const nameEl = document.getElementById('sName');
+  const name = nameEl.value.trim(); if (!name) { nameEl.focus(); return; }
+  const item = { name, qty: +document.getElementById('sQty').value||1, unit: '', cat: document.getElementById('sCat').value, done: false, at: Date.now() };
+  if (db) db.ref(`rooms/${roomId}/shop`).push(item);
+  else { shopData['l'+Date.now()] = item; persist(); renderShop(); }
+  nameEl.value = ''; document.getElementById('sQty').value = 1; nameEl.focus();
+}
+
+function toggleShop(id) {
+  const item = shopData[id]; if (!item) return;
+  const done = !item.done;
+  if (db) { db.ref(`rooms/${roomId}/shop/${id}/done`).set(done); if (done) addToInvFromShop(item); }
+  else { shopData[id].done = done; if (done) addToInvFromShop(item); persist(); renderShop(); }
+}
+
+function deleteShop(id) {
+  if (db) db.ref(`rooms/${roomId}/shop/${id}`).remove();
+  else { delete shopData[id]; persist(); renderShop(); }
+}
+
+function clearDone() {
+  const ids = Object.keys(shopData).filter(id => shopData[id].done);
+  if (!ids.length) return;
+  if (db) ids.forEach(id => db.ref(`rooms/${roomId}/shop/${id}`).remove());
+  else { ids.forEach(id => delete shopData[id]); persist(); renderShop(); }
+  toast('購入済みをクリアしました');
+}
+
+// ─────────────────────────────────────────────────────
+// Inventory — CRUD
+// ─────────────────────────────────────────────────────
+function findInvKey(name) {
+  return Object.keys(invData).find(id => (invData[id].name||'').toLowerCase() === name.toLowerCase());
+}
+
+function writeInv(id, patch) {
+  if (db) {
+    Object.entries(patch).forEach(([k,v]) => db.ref(`rooms/${roomId}/inv/${id}/${k}`).set(v ?? null));
+  } else {
+    Object.assign(invData[id], patch); persist(); renderInv(); renderShop();
+  }
+}
+
+function pushInv(item) {
+  if (db) db.ref(`rooms/${roomId}/inv`).push(item);
+  else { invData['l'+Date.now()] = item; persist(); renderInv(); renderShop(); }
+}
+
+function addToInvFromShop(shopItem) {
+  const key = findInvKey(shopItem.name);
+  const autoExp = calcAutoExpiry(shopItem.cat);
+  if (key) {
+    const newLevel = Math.min(5, (invData[key].level||3) + 2);
+    writeInv(key, { level: newLevel, ...(autoExp && { expiry: autoExp }) });
+    toast(`「${shopItem.name}」の在庫レベルを上げました`);
+  } else {
+    pushInv({ name: shopItem.name, cat: shopItem.cat, level: 3, expiry: autoExp, frozen: false, originalExpiry: null, at: Date.now() });
+    toast(`「${shopItem.name}」を在庫に追加しました${autoExp ? '（賞味期限自動設定）' : ''}`);
+  }
+}
+
+function addInvItem() {
+  const nameEl = document.getElementById('iName');
+  const name = nameEl.value.trim(); if (!name) { nameEl.focus(); return; }
+  const cat    = document.getElementById('iCat').value;
+  const level  = +document.getElementById('iLevel').value || 3;
+  const expiry = document.getElementById('iExpiry').value || calcAutoExpiry(cat) || null;
+  const key = findInvKey(name);
+  if (key) {
+    writeInv(key, { level: Math.min(5, (invData[key].level||3) + 1), ...(expiry && { expiry }) });
+    toast(`「${name}」の在庫レベルを更新しました`);
+  } else {
+    pushInv({ name, cat, level, expiry, frozen: false, originalExpiry: null, at: Date.now() });
+  }
+  nameEl.value = ''; document.getElementById('iExpiry').value = ''; nameEl.focus();
+}
+
+function changeLevel(id, d) {
+  writeInv(id, { level: Math.max(1, Math.min(5, (invData[id]?.level||3) + d)) });
+}
+
+function deleteInv(id) {
+  if (db) db.ref(`rooms/${roomId}/inv/${id}`).remove();
+  else { delete invData[id]; persist(); renderInv(); renderShop(); }
+}
+
+function restockItem(invId) {
+  const item = invData[invId]; if (!item) return;
+  const autoExp = item.frozen ? null : calcAutoExpiry(item.cat);
+  writeInv(invId, { level: 4, ...(autoExp && { expiry: autoExp }) });
+  toast(`✓「${item.name}」を購入 → 在庫: ある`);
+}
+
+// ─────────────────────────────────────────────────────
+// Freeze ❄️
+// ─────────────────────────────────────────────────────
+function toggleFreeze(id) {
+  const item = invData[id]; if (!item) return;
+  item.frozen ? unfreezeItem(id, item) : freezeItem(id, item);
+}
+function freezeItem(id, item) {
+  writeInv(id, { frozen: true, originalExpiry: item.expiry || null, expiry: addDaysToDate(90, item.expiry || null) });
+  toast(`❄️「${item.name}」を冷凍（賞味期限 +3ヶ月）`);
+}
+function unfreezeItem(id, item) {
+  writeInv(id, { frozen: false, expiry: item.originalExpiry || null, originalExpiry: null });
+  toast(`「${item.name}」の冷凍を解除しました`);
+}
+
+// ─────────────────────────────────────────────────────
+// Expiry modal
+// ─────────────────────────────────────────────────────
+function openExpiryModal(id) {
+  editingId = id;
+  const item = invData[id]; if (!item) return;
+  document.getElementById('expiryItemLabel').textContent = item.name;
+  document.getElementById('expiryDateInput').value = item.expiry || '';
+  openModal('expiryModal');
+}
+function saveExpiry() {
+  if (!editingId) return;
+  const val = document.getElementById('expiryDateInput').value;
+  if (!val) { clearExpiry(); return; }
+  writeInv(editingId, { expiry: val });
+  closeModal('expiryModal'); toast('賞味期限を設定しました'); editingId = null;
+}
+function clearExpiry() {
+  if (!editingId) return;
+  writeInv(editingId, { expiry: null });
+  closeModal('expiryModal'); toast('賞味期限を削除しました'); editingId = null;
+}
+
+// ─────────────────────────────────────────────────────
+// Render — Shopping list
+// ─────────────────────────────────────────────────────
+function renderShop() {
+  const el = document.getElementById('shopList');
+  let h = '';
+
+  // Low-stock section
+  const lowItems = Object.entries(invData)
+    .filter(([,i]) => (i.level||3) <= 2)
+    .sort((a,b) => (a[1].level||3) - (b[1].level||3) || (a[1].name||'').localeCompare(b[1].name||'','ja'));
+
+  if (lowItems.length) {
+    h += `<div class="low-card"><div class="low-header"><div>
+      <div class="low-header-title">📉 在庫が少ないもの <span class="badge badge-orange">${lowItems.length}</span></div>
+      <div class="low-header-hint">タップすると購入済みにして在庫を更新します</div>
+    </div></div>`;
+    lowItems.forEach(([id, item]) => { h += lowItemHTML(id, item); });
+    h += `</div>`;
+  }
+
+  // Regular shopping list
+  const all     = Object.entries(shopData);
+  const pending = all.filter(([,i]) => !i.done).sort((a,b) => a[1].at - b[1].at);
+  const done    = all.filter(([,i]) =>  i.done).sort((a,b) => a[1].at - b[1].at);
+
+  if (!all.length && !lowItems.length) {
+    el.innerHTML = `<div class="empty"><div class="ei">🛍️</div><p>買い物リストは空です<br>上から追加してください</p></div>`;
+    return;
+  }
+
+  if (pending.length) {
+    h += `<div class="sec-label"><span>買い物リスト</span><span class="badge">${pending.length}</span></div>`;
+    pending.forEach(([id,i]) => h += shopItemHTML(id,i));
+  }
+  if (done.length) {
+    h += `<div class="sec-label" style="margin-top:18px"><span>購入済み ✓</span><button class="btn btn-red" onclick="clearDone()">クリア</button></div>`;
+    done.forEach(([id,i]) => h += shopItemHTML(id,i));
+  }
+  if (!pending.length && !done.length && lowItems.length) {
+    h += `<div class="empty" style="padding:20px 20px 0"><div class="ei" style="font-size:36px">🛍️</div><p>手動で追加したアイテムはありません</p></div>`;
+  }
+
+  el.innerHTML = h;
+}
+
+function lowItemHTML(id, item) {
+  const level = Math.max(1, Math.min(5, item.level||1));
+  const lv    = LEVELS[level];
+  const cat   = CAT_MAP[item.cat] || { icon:'📦' };
+  const dots  = Array.from({length:5}, (_,i) =>
+    `<span class="mdot" style="${i<level?`background:${lv.color}`:''}"></span>`
+  ).join('');
+  return `
+  <div class="low-item" onclick="restockItem('${id}')">
+    <div class="low-chk">○</div>
+    <div class="low-info">
+      <div class="low-name">${item.frozen?'❄️ ':''}${esc(item.name)}</div>
+      <div class="low-meta">
+        <span class="cat-tag">${cat.icon} ${esc(item.cat)}</span>
+        <span class="mini-gauge">${dots}<span class="mini-lbl" style="color:${lv.color}">${lv.label}</span></span>
+      </div>
+    </div>
+  </div>`;
+}
+
+function shopItemHTML(id, i) {
+  const cat    = CAT_MAP[i.cat] || { icon:'📦' };
+  // Quantity display: show amount+unit for AI-generated items, "× N" for manual
+  const qtyStr = i.unit ? `${i.qty}${i.unit}` : `× ${i.qty}`;
+  return `
+  <div class="li ${i.done?'done':''}">
+    <div class="chk ${i.done?'on':''}" onclick="toggleShop('${id}')">${i.done?'✓':''}</div>
+    <div class="li-info">
+      <div class="li-name ${i.done?'done':''}">${esc(i.name)}</div>
+      <div class="li-meta">
+        <span class="cat-tag">${cat.icon} ${esc(i.cat)}</span>
+        <span>${qtyStr}</span>
+      </div>
+    </div>
+    <button class="btn btn-red" onclick="event.stopPropagation();deleteShop('${id}')">✕</button>
+  </div>`;
+}
+
+// ─────────────────────────────────────────────────────
+// Render — Inventory
+// ─────────────────────────────────────────────────────
+function setFilter(cat, btn) {
+  invFilter = cat;
+  document.querySelectorAll('.cf-btn').forEach(b => b.classList.remove('on'));
+  btn.classList.add('on'); renderInv();
+}
+
+function setSort(mode, btn) {
+  invSort = mode;
+  document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('on'));
+  btn.classList.add('on');
+  document.getElementById('catFilter').style.display = mode === 'cat' ? 'flex' : 'none';
+  renderInv();
+}
+
+function renderInv() {
+  const el = document.getElementById('invList');
+  let entries = Object.entries(invData);
+  if (invSort === 'cat' && invFilter !== 'all') entries = entries.filter(([,i]) => i.cat === invFilter);
+
+  const today = new Date(); today.setHours(0,0,0,0);
+  const nearExp  = Object.values(invData).filter(i => !i.expiry || i.frozen ? false : Math.round((new Date(i.expiry)-today)/86400000) <= 3);
+  const lowStock = Object.values(invData).filter(i => (i.level||3) <= 2);
+  const expEl = document.getElementById('alertExp');
+  const lowEl = document.getElementById('alertLow');
+  expEl.style.display = nearExp.length  ? 'block' : 'none';
+  lowEl.style.display = lowStock.length ? 'block' : 'none';
+  if (nearExp.length)  expEl.textContent = `⚠️ 期限切れ・間近: ${nearExp.map(i=>i.name).join('、')}`;
+  if (lowStock.length) lowEl.textContent = `📉 在庫が少ない: ${lowStock.map(i=>i.name).join('、')} → 買い物タブに表示中`;
+
+  if (!entries.length) {
+    el.innerHTML = `<div class="empty"><div class="ei">📦</div><p>在庫アイテムがありません</p></div>`; return;
+  }
+  invSort === 'exp' ? renderInvByExp(el, entries) : renderInvByCat(el, entries);
+}
+
+function renderInvByCat(el, entries) {
+  entries.sort((a,b) => {
+    const oi = CATS.findIndex(c=>c.id===a[1].cat), oj = CATS.findIndex(c=>c.id===b[1].cat);
+    return oi !== oj ? oi - oj : (a[1].name||'').localeCompare(b[1].name||'','ja');
+  });
+  const groups = {};
+  entries.forEach(([id,i]) => { (groups[i.cat]??=[]).push([id,i]); });
+  let h = '';
+  Object.entries(groups).forEach(([cat, items]) => {
+    const c = CAT_MAP[cat] || { icon:'📦' };
+    h += `<div class="sec-label"><span>${c.icon} ${esc(cat)}</span><span class="badge">${items.length}</span></div>`;
+    items.forEach(([id,i]) => h += invCardHTML(id,i));
+  });
+  el.innerHTML = h;
+}
+
+function renderInvByExp(el, entries) {
+  const today = new Date(); today.setHours(0,0,0,0);
+  entries.sort((a,b) => {
+    const da  = a[1].expiry ? Math.round((new Date(a[1].expiry)-today)/86400000) : 9999;
+    const db_ = b[1].expiry ? Math.round((new Date(b[1].expiry)-today)/86400000) : 9999;
+    return da !== db_ ? da - db_ : (a[1].name||'').localeCompare(b[1].name||'','ja');
+  });
+  const groups = [
+    { label:'🔴 期限切れ・3日以内', items:[] },
+    { label:'🟡 7日以内',           items:[] },
+    { label:'🟢 余裕あり',           items:[] },
+    { label:'— 期限なし',            items:[] },
+  ];
+  entries.forEach(([id,i]) => {
+    if (!i.expiry) { groups[3].items.push([id,i]); return; }
+    const diff = Math.round((new Date(i.expiry)-today)/86400000);
+    if (diff <= 3) groups[0].items.push([id,i]);
+    else if (diff <= 7) groups[1].items.push([id,i]);
+    else groups[2].items.push([id,i]);
+  });
+  let h = '';
+  groups.forEach(g => {
+    if (!g.items.length) return;
+    h += `<div class="sec-label"><span>${g.label}</span><span class="badge">${g.items.length}</span></div>`;
+    g.items.forEach(([id,i]) => h += invCardHTML(id,i));
+  });
+  el.innerHTML = h;
+}
+
+function invCardHTML(id, i) {
+  const level  = Math.max(1, Math.min(5, i.level||3));
+  const lv     = LEVELS[level];
+  const cat    = CAT_MAP[i.cat] || { icon:'📦' };
+  const ei     = expiryInfo(i.expiry);
+  const frozen = !!i.frozen;
+  const dots   = Array.from({length:5}, (_,idx) =>
+    `<span class="gdot" style="${idx<level?`background:${lv.color}`:''}"></span>`
+  ).join('');
+  let cardCls = '';
+  if (frozen) cardCls = 'frozen';
+  else if (ei?.cls==='crit') cardCls = 'exp-crit';
+  else if (ei?.cls==='near') cardCls = 'exp-near';
+  const expTag = ei
+    ? `<span class="exp-tag ${frozen?'ok':ei.cls}" onclick="openExpiryModal('${id}')">📅 ${esc(ei.text)}${frozen?' ❄️':''}</span>`
+    : `<span class="exp-tag none" onclick="openExpiryModal('${id}')">📅 期限を設定</span>`;
+  return `
+  <div class="inv-card ${cardCls}">
+    <div class="inv-top">
+      <div class="inv-name">${frozen?'❄️ ':''}${esc(i.name)}</div>
+      <div class="inv-top-btns">
+        <button class="frz-btn ${frozen?'on':''}" onclick="toggleFreeze('${id}')" title="${frozen?'冷凍解除':'冷凍する'}">❄️</button>
+        <button class="btn btn-red" onclick="deleteInv('${id}')">✕</button>
+      </div>
+    </div>
+    <div class="inv-mid">
+      <span class="inv-cat">${cat.icon} ${esc(i.cat)}</span>
+      ${frozen ? '<span class="frozen-badge">❄️ 冷凍中</span>' : ''}
+      ${expTag}
+    </div>
+    <div class="inv-bot">
+      <button class="lvb m" onclick="changeLevel('${id}',-1)">−</button>
+      <div class="gauge-wrap">
+        <div class="gauge-dots">${dots}</div>
+        <div class="gauge-lbl" style="color:${lv.color}">${lv.label}</div>
+      </div>
+      <button class="lvb p" onclick="changeLevel('${id}',+1)">＋</button>
+    </div>
+  </div>`;
+}
+
+// ─────────────────────────────────────────────────────
+// UI helpers
+// ─────────────────────────────────────────────────────
+function switchTab(tab) {
+  ['shop','inv'].forEach(t => {
+    document.getElementById('pane-'+t).classList.toggle('active', t===tab);
+    document.getElementById('tb-'+t).classList.toggle('active', t===tab);
+  });
+}
+
+function openModal(id) {
+  if (id === 'shareModal') document.getElementById('shareUrlBox').textContent = location.href;
+  document.getElementById(id).classList.add('show');
+}
+function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+
+function copyUrl() {
+  const url = location.href;
+  (navigator.clipboard?.writeText(url) ?? Promise.reject())
+    .then(() => toast('URLをコピーしました！'))
+    .catch(() => { const t=document.createElement('textarea'); t.value=url; document.body.appendChild(t); t.select(); document.execCommand('copy'); document.body.removeChild(t); toast('URLをコピーしました！'); });
+  closeModal('shareModal');
+}
+
+let _tt;
+function toast(msg, dur=2800) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  clearTimeout(_tt); _tt = setTimeout(() => el.classList.remove('show'), dur);
+}
+
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+document.getElementById('sName').addEventListener('keydown', e => { if(e.key==='Enter') addShopItem(); });
+document.getElementById('iName').addEventListener('keydown', e => { if(e.key==='Enter') addInvItem(); });
+
+boot();
+</script>
+</body>
+</html>
